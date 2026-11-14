@@ -66,11 +66,12 @@
 import { onMounted, ref } from 'vue'
 
 import { request } from '@/api/client'
+import { EVENT_COLUMNS, decorateRows } from '@/api/events'
 
 type Row = Record<string, string | number | null>
 
 const ENDPOINT = '/api/recycle'
-const columns = ["记录编号", "表名称", "删除时间", "回收原因", "数据大小", "可恢复期", "恢复状态", "清理时间"]
+const columns = ["记录编号", "表名称", "删除时间", "回收原因", "数据大小", "可恢复期", "恢复状态", "清理时间", ...EVENT_COLUMNS]
 const actions = ["恢复数据", "永久清理", "延期保留"]
 const statuses = ["待恢复", "已恢复", "已清理", "已过期"]
 const stats = [{"label": "回收记录总数", "value": 0}, {"label": "待恢复记录", "value": 0}, {"label": "已清理记录", "value": 0}]
@@ -119,7 +120,7 @@ async function reload() {
       throw new Error('回收记录列表读取失败')
     }
     const payload = await response.json()
-    rows.value = payload.items ?? []
+    rows.value = decorateRows(payload.items ?? []) as Row[]
     total.value = payload.total ?? rows.value.length
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '数据回收站列表读取失败'

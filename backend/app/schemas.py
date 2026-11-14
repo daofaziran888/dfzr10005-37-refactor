@@ -19,6 +19,45 @@ class ActionResult(BaseModel):
     ok: bool
     message: str
     entry: dict[str, Any] | None = None
+    # 统一事件边界补充的溯源字段：旧调用方只读 ok/message/entry，不受影响。
+    event_id: str | None = None
+    record_no: str | None = None
+    source_module: str | None = None
+    request_id: str | None = None
+    parent_tx_id: str | None = None
+    error_summary: str | None = None
+
+
+class BatchActionCall(BaseModel):
+    """批量动作中的单次调用：字段名与旧动作入参保持一致，便于旧接口映射。"""
+
+    module: str
+    entry_id: int
+    action: str
+    values: dict[str, Any] = Field(default_factory=dict)
+    operator: str | None = None
+    request_id: str | None = None
+
+
+class BatchActionPayload(BaseModel):
+    calls: list[BatchActionCall]
+    parent_tx_id: str | None = None
+
+
+class BatchActionResult(BaseModel):
+    ok: bool
+    parent_tx_id: str
+    message: str
+    results: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class EventQuery(BaseModel):
+    module: str | None = None
+    record_no: str | None = None
+    action: str | None = None
+    status: str | None = None
+    page: int = 1
+    size: int = 20
 
 
 class EntryPayload(BaseModel):
@@ -26,6 +65,10 @@ class EntryPayload(BaseModel):
 
     values: dict[str, Any] = Field(default_factory=dict)
     remark: str | None = None
+    # 旧接口入参映射：动作溯源信息可选，缺省时由边界补默认值。
+    operator: str | None = None
+    request_id: str | None = None
+    parent_tx_id: str | None = None
 
 
 

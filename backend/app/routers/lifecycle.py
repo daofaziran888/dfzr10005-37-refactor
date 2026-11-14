@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas import ActionResult, EntryPayload, PageResult
 from app.services.lifecycle import LifecycleService
+from app.routers._common import extract_context, to_action_result
 
 router = APIRouter(prefix="/api/lifecycle", tags=["表生命周期管理"])
 
@@ -50,12 +51,22 @@ def create_entry(payload: EntryPayload) -> ActionResult:
 
 @router.post("/{entry_id}/actions", response_model=ActionResult)
 def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
-    """对单条生命周期策略执行启用策略、归档表、删除表；不允许的动作会被拦下并说明原因。"""
+    """对单条生命周期策略执行启用策略、归档表、删除表。
+
+    状态变更与审计事件由统一事件边界在同一事件内落库；非法或重复动作不会
+    改变业务与审计任何一侧，错误摘要随失败事件留痕。
+    """
     action = str(payload.values.get("action") or "").strip()
-    entry, message = service.run_action(entry_id, action)
-    if entry is None:
-        return ActionResult(ok=False, message=message)
-    return ActionResult(ok=True, message=message, entry=entry)
+    ctx = extract_context(payload)
+    outcome = service.run_action(
+        entry_id,
+        action,
+        operator=ctx["operator"],
+        request_id=ctx["request_id"],
+        parent_tx_id=ctx["parent_tx_id"],
+        values=payload.values,
+    )
+    return to_action_result(outcome)
 
 
 @router.get("/export")

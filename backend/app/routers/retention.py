@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas import ActionResult, EntryPayload, PageResult
 from app.services.retention import RetentionService
+from app.routers._common import extract_context, to_action_result
 
 router = APIRouter(prefix="/api/retention", tags=["数据保留策略"])
 
@@ -50,12 +51,18 @@ def create_entry(payload: EntryPayload) -> ActionResult:
 
 @router.post("/{entry_id}/actions", response_model=ActionResult)
 def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
-    """对单条保留规则执行启用规则、废止规则、归档规则；不允许的动作会被拦下并说明原因。"""
+    """对单条保留规则执行启用规则、废止规则、归档规则；统一走事件边界落库。"""
     action = str(payload.values.get("action") or "").strip()
-    entry, message = service.run_action(entry_id, action)
-    if entry is None:
-        return ActionResult(ok=False, message=message)
-    return ActionResult(ok=True, message=message, entry=entry)
+    ctx = extract_context(payload)
+    outcome = service.run_action(
+        entry_id,
+        action,
+        operator=ctx["operator"],
+        request_id=ctx["request_id"],
+        parent_tx_id=ctx["parent_tx_id"],
+        values=payload.values,
+    )
+    return to_action_result(outcome)
 
 
 @router.get("/export")

@@ -22,5 +22,6 @@ from app.routers import baseline as router_baseline
 from app.routers import recycle as router_recycle
 from app.routers import audit as router_audit
 from app.routers import benchmark as router_benchmark
+from app.routers import events as router_events
 
-ROUTERS = [router_lifecycle, router_cost, router_heatmap, router_dag, router_sla, router_resource, router_score, router_drift, router_catalog, router_retention, router_dedup, router_tier, router_baseline, router_recycle, router_audit, router_benchmark]
+ROUTERS = [router_lifecycle, router_cost, router_heatmap, router_dag, router_sla, router_resource, router_score, router_drift, router_catalog, router_retention, router_dedup, router_tier, router_baseline, router_recycle, router_audit, router_benchmark, router_events]

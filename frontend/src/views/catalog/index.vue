@@ -47,6 +47,7 @@
             >
               {{ action }}
             </button>
+            <button class="link" type="button" @click="changeOwner(row)">变更负责人</button>
           </td>
         </tr>
         <tr v-if="!rows.length">
@@ -66,11 +67,12 @@
 import { onMounted, ref } from 'vue'
 
 import { request } from '@/api/client'
+import { EVENT_COLUMNS, decorateRows } from '@/api/events'
 
 type Row = Record<string, string | number | null>
 
 const ENDPOINT = '/api/catalog'
-const columns = ["资产编号", "表名称", "资产分类", "业务域", "负责人", "数据等级", "更新频率", "盘点时间"]
+const columns = ["资产编号", "表名称", "资产分类", "业务域", "负责人", "数据等级", "更新频率", "盘点时间", ...EVENT_COLUMNS]
 const actions = ["提交复核", "归档资产", "废弃资产"]
 const statuses = ["草稿", "已盘点", "已复核", "已归档"]
 const stats = [{"label": "资产记录总数", "value": 0}, {"label": "已复核资产", "value": 0}, {"label": "已归档资产", "value": 0}]
@@ -101,12 +103,39 @@ async function runAction(action: string, row: Row) {
       method: 'POST',
       body: JSON.stringify({ action }),
     })
-    if (!response.ok) {
-      throw new Error('数据资产盘点动作未生效，请稍后重试')
+    const payload = await response.json()
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message ?? '数据资产盘点动作未生效，请稍后重试')
     }
     await reload()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '数据资产盘点操作失败'
+  }
+}
+
+async function changeOwner(row: Row) {
+  errorMessage.value = ''
+  const owner = window.prompt(`为资产 ${row.资产编号} 录入新负责人（仅产生一条变更事件）`)
+  if (owner === null) {
+    return
+  }
+  const trimmed = owner.trim()
+  if (!trimmed) {
+    errorMessage.value = '新负责人不能为空，事件未写入'
+    return
+  }
+  try {
+    const response = await request(`${ENDPOINT}/${row.id}/owner`, {
+      method: 'POST',
+      body: JSON.stringify({ values: { 负责人: trimmed }, operator: '值班管理员' }),
+    })
+    const payload = await response.json()
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message ?? '负责人变更未生效')
+    }
+    await reload()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '负责人变更失败'
   }
 }
 
@@ -119,7 +148,7 @@ async function reload() {
       throw new Error('资产记录列表读取失败')
     }
     const payload = await response.json()
-    rows.value = payload.items ?? []
+    rows.value = decorateRows(payload.items ?? []) as Row[]
     total.value = payload.total ?? rows.value.length
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '数据资产盘点列表读取失败'

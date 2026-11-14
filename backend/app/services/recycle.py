@@ -1,15 +1,18 @@
-"""数据回收站业务规则：状态流转、字段校验与筛选口径都收在这里。"""
+"""数据回收站业务规则：恢复、清理、延期动作全部收口到统一事件边界。"""
 from __future__ import annotations
 
 from typing import Any
 
+from app.event_rules import RULES
+from app.events import EventOutcome, event_boundary
 from app.store import store
 
 MODULE = "recycle"
+_RULE = RULES[MODULE]
 REQUIRED_FIELDS = ["记录编号", "表名称", "删除时间"]
-STATUS_ORDER = ["待恢复", "已恢复", "已清理", "已过期"]
-ACTION_RULES = {"恢复数据": "待恢复", "永久清理": "已恢复", "延期保留": "已过期"}
-NEGATIVE_ACTIONS = []
+STATUS_ORDER = list(_RULE.status_order)
+ACTION_RULES = dict(_RULE.action_targets)
+NEGATIVE_ACTIONS = list(_RULE.negative_actions)
 
 
 class RecycleService:
@@ -46,16 +49,22 @@ class RecycleService:
         rows.append(entry)
         return entry, []
 
-    def run_action(self, entry_id: int, action: str) -> tuple[dict[str, Any] | None, str]:
-        entry = store.find(MODULE, entry_id)
-        if entry is None:
-            return None, f"回收记录 {entry_id} 不存在或已归档"
-        if action not in ACTION_RULES:
-            return None, f"动作「{action}」不属于数据回收站可执行范围"
-        target = ACTION_RULES[action]
-        if target not in STATUS_ORDER:
-            return None, f"目标状态「{target}」不在允许的状态序列里"
-        entry["status"] = target
-        entry["pending"] = target != STATUS_ORDER[-1]
-        entry["abnormal"] = action in NEGATIVE_ACTIONS
-        return entry, f"回收记录已{action}"
+    def run_action(
+        self,
+        entry_id: int,
+        action: str,
+        *,
+        operator: str | None = None,
+        request_id: str | None = None,
+        parent_tx_id: str | None = None,
+        values: dict[str, Any] | None = None,
+    ) -> EventOutcome:
+        return event_boundary.submit(
+            MODULE,
+            entry_id,
+            action,
+            values=values,
+            operator=operator,
+            request_id=request_id,
+            parent_tx_id=parent_tx_id,
+        )

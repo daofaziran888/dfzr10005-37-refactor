@@ -1,15 +1,22 @@
-"""数据资产盘点业务规则：状态流转、字段校验与筛选口径都收在这里。"""
+"""数据资产盘点业务规则。
+
+动作与字段变更（例如负责人变更）都经统一事件边界落库，保证一次变更只产生
+一条包含旧值、新值、来源模块与落库时间的事件。
+"""
 from __future__ import annotations
 
 from typing import Any
 
+from app.event_rules import RULES
+from app.events import EventOutcome, event_boundary
 from app.store import store
 
 MODULE = "catalog"
+_RULE = RULES[MODULE]
 REQUIRED_FIELDS = ["资产编号", "表名称", "资产分类"]
-STATUS_ORDER = ["草稿", "已盘点", "已复核", "已归档"]
-ACTION_RULES = {"提交复核": "已盘点", "归档资产": "已复核", "废弃资产": "已归档"}
-NEGATIVE_ACTIONS = []
+STATUS_ORDER = list(_RULE.status_order)
+ACTION_RULES = dict(_RULE.action_targets)
+NEGATIVE_ACTIONS = list(_RULE.negative_actions)
 
 
 class CatalogService:
@@ -46,16 +53,43 @@ class CatalogService:
         rows.append(entry)
         return entry, []
 
-    def run_action(self, entry_id: int, action: str) -> tuple[dict[str, Any] | None, str]:
-        entry = store.find(MODULE, entry_id)
-        if entry is None:
-            return None, f"资产记录 {entry_id} 不存在或已归档"
-        if action not in ACTION_RULES:
-            return None, f"动作「{action}」不属于数据资产盘点可执行范围"
-        target = ACTION_RULES[action]
-        if target not in STATUS_ORDER:
-            return None, f"目标状态「{target}」不在允许的状态序列里"
-        entry["status"] = target
-        entry["pending"] = target != STATUS_ORDER[-1]
-        entry["abnormal"] = action in NEGATIVE_ACTIONS
-        return entry, f"资产记录已{action}"
+    def run_action(
+        self,
+        entry_id: int,
+        action: str,
+        *,
+        operator: str | None = None,
+        request_id: str | None = None,
+        parent_tx_id: str | None = None,
+        values: dict[str, Any] | None = None,
+    ) -> EventOutcome:
+        return event_boundary.submit(
+            MODULE,
+            entry_id,
+            action,
+            values=values,
+            operator=operator,
+            request_id=request_id,
+            parent_tx_id=parent_tx_id,
+        )
+
+    def change_owner(
+        self,
+        entry_id: int,
+        new_owner: str,
+        *,
+        operator: str | None = None,
+        request_id: str | None = None,
+        parent_tx_id: str | None = None,
+    ) -> EventOutcome:
+        """资产负责人变更：只产生一条含旧负责人、新负责人、来源模块与落库时间的事件。"""
+        return event_boundary.change_field(
+            MODULE,
+            entry_id,
+            "负责人",
+            new_owner,
+            operator=operator,
+            request_id=request_id,
+            parent_tx_id=parent_tx_id,
+            action="变更负责人",
+        )

@@ -1,15 +1,23 @@
-"""表生命周期管理业务规则：状态流转、字段校验与筛选口径都收在这里。"""
+"""表生命周期管理业务规则。
+
+状态变更不再在本服务内直接改字段，而是统一提交到事件边界（app.events），
+由边界在同一事件内完成业务落库与审计投影；本服务只保留读取与登记口径。
+"""
 from __future__ import annotations
 
 from typing import Any
 
+from app.event_rules import RULES
+from app.events import EventOutcome, event_boundary
 from app.store import store
 
 MODULE = "lifecycle"
+# 规则收口到 event_rules，这里只做只读引用，禁止再出现第二份动作映射。
+_RULE = RULES[MODULE]
 REQUIRED_FIELDS = ["策略编号", "表名称", "创建日期"]
-STATUS_ORDER = ["草稿", "生效中", "已到期", "已归档"]
-ACTION_RULES = {"启用策略": "草稿", "归档表": "生效中", "删除表": "已到期"}
-NEGATIVE_ACTIONS = []
+STATUS_ORDER = list(_RULE.status_order)
+ACTION_RULES = dict(_RULE.action_targets)
+NEGATIVE_ACTIONS = list(_RULE.negative_actions)
 
 
 class LifecycleService:
@@ -46,16 +54,23 @@ class LifecycleService:
         rows.append(entry)
         return entry, []
 
-    def run_action(self, entry_id: int, action: str) -> tuple[dict[str, Any] | None, str]:
-        entry = store.find(MODULE, entry_id)
-        if entry is None:
-            return None, f"生命周期策略 {entry_id} 不存在或已归档"
-        if action not in ACTION_RULES:
-            return None, f"动作「{action}」不属于表生命周期管理可执行范围"
-        target = ACTION_RULES[action]
-        if target not in STATUS_ORDER:
-            return None, f"目标状态「{target}」不在允许的状态序列里"
-        entry["status"] = target
-        entry["pending"] = target != STATUS_ORDER[-1]
-        entry["abnormal"] = action in NEGATIVE_ACTIONS
-        return entry, f"生命周期策略已{action}"
+    def run_action(
+        self,
+        entry_id: int,
+        action: str,
+        *,
+        operator: str | None = None,
+        request_id: str | None = None,
+        parent_tx_id: str | None = None,
+        values: dict[str, Any] | None = None,
+    ) -> EventOutcome:
+        """旧入口签名（entry_id, action）保持可用，新增的溯源参数走同一事件边界。"""
+        return event_boundary.submit(
+            MODULE,
+            entry_id,
+            action,
+            values=values,
+            operator=operator,
+            request_id=request_id,
+            parent_tx_id=parent_tx_id,
+        )

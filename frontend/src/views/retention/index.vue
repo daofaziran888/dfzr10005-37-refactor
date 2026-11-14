@@ -66,11 +66,12 @@
 import { onMounted, ref } from 'vue'
 
 import { request } from '@/api/client'
+import { EVENT_COLUMNS, decorateRows } from '@/api/events'
 
 type Row = Record<string, string | number | null>
 
 const ENDPOINT = '/api/retention'
-const columns = ["规则编号", "数据集范围", "保留期限", "过期动作", "例外清单", "合规依据", "执行周期", "规则状态"]
+const columns = ["规则编号", "数据集范围", "保留期限", "过期动作", "例外清单", "合规依据", "执行周期", "规则状态", ...EVENT_COLUMNS]
 const actions = ["启用规则", "废止规则", "归档规则"]
 const statuses = ["草稿", "生效中", "已到期", "已废止"]
 const stats = [{"label": "保留规则总数", "value": 0}, {"label": "生效中规则", "value": 0}, {"label": "已到期规则", "value": 0}]
@@ -119,7 +120,7 @@ async function reload() {
       throw new Error('保留规则列表读取失败')
     }
     const payload = await response.json()
-    rows.value = payload.items ?? []
+    rows.value = decorateRows(payload.items ?? []) as Row[]
     total.value = payload.total ?? rows.value.length
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '数据保留策略列表读取失败'
